@@ -66,6 +66,53 @@ class FileSystem {
         return new OpenFile(fileDescriptor);
     }
 
+    // MP1 start
+    OpenFileId OpenAFile(char *name) {
+        int retId = 0;
+        while (retId < 20 && fileDescriptorTable[retId] != NULL)
+            retId++;
+        if (retId == 20)
+            return -1;
+        int fileDescriptor = OpenForReadWrite(name, FALSE);
+        if (fileDescriptor < 0)
+            return -1;
+        fileDescriptorTable[retId] = new OpenFile(fileDescriptor);
+        return retId;
+    }
+
+    int WriteFile(char *buffer, int size, OpenFileId id) {
+        if (id < 0 || id >= 20)
+            return -1;
+        if (fileDescriptorTable[id] == NULL)
+            return -1;
+        int retVal = fileDescriptorTable[id]->Write(buffer, size);
+        if (retVal < 0)
+            return -1;
+        return retVal;
+    }
+
+    int ReadFile(char *buffer, int size, OpenFileId id) {
+        if (id < 0 || id >= 20)
+            return -1;
+        if (fileDescriptorTable[id] == NULL)
+            return -1;
+        int retVal = fileDescriptorTable[id]->Read(buffer, size);
+        if (retVal < 0)
+            retVal = -1;
+        return retVal;
+    }
+
+    int CloseFile(OpenFileId id) {
+        if (id < 0 || id >= 20)
+            return -1;
+        if (fileDescriptorTable[id] == NULL)
+            return -1;
+        delete fileDescriptorTable[id];
+        fileDescriptorTable[id] = NULL;
+        return 1;
+    }
+    // MP1 end
+
     bool Remove(char *name) { return Unlink(name) == 0; }
 
     OpenFile *fileDescriptorTable[20];
