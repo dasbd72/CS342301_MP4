@@ -55,6 +55,30 @@ int SysClose(OpenFileId id) {
     return kernel->fileSystem->CloseFile(id);
 }
 // MP1 end
+#else
+int SysCreate(char *filename, int size) {
+    // return value
+    // 1: success
+    // 0: failed
+    // return kernel->interrupt->CreateFile(filename);
+    return kernel->fileSystem->Create(filename, size);
+}
+
+OpenFileId SysOpen(char *filename) {
+    return kernel->fileSystem->OpenAFile(filename);
+}
+
+int SysWrite(char *buffer, int size, OpenFileId id) {
+    return kernel->fileSystem->WriteFile(buffer, size, id);
+}
+
+int SysRead(char *buffer, int size, OpenFileId id) {
+    return kernel->fileSystem->ReadFile(buffer, size, id);
+}
+
+int SysClose(OpenFileId id) {
+    return kernel->fileSystem->CloseFile(id);
+}
 #endif
 
 #endif /* ! __USERPROG_KSYSCALL_H__ */

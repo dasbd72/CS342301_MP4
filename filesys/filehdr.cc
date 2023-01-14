@@ -29,6 +29,155 @@
 #include "main.h"
 #include "synchdisk.h"
 
+IndexBlock::IndexBlock(int level) : level(level) {
+    // if (debug->IsEnabled('f'))
+    //     printf("IndexBlock::IndexBlock(%d)\n", level);
+
+    numBytes = -1;
+    numSectors = -1;
+    levelSectors = -1;
+    memset(nextSectors, -1, sizeof(nextSectors));
+    nextIndexBlocks = NULL;
+}
+IndexBlock::~IndexBlock() {
+    // if (debug->IsEnabled('f'))
+    //     printf("IndexBlock::~IndexBlock(), level: %d\n", level);
+
+    if (level != 0) {
+        ASSERT(nextIndexBlocks != NULL);
+        for (int i = 0; i < levelSectors; i++) {
+            ASSERT(nextIndexBlocks[i] != NULL);
+            delete nextIndexBlocks[i];
+        }
+        delete[] nextIndexBlocks;
+    }
+}
+bool IndexBlock::Allocate(PersistentBitmap *freeMap, int remSize) {
+    // if (debug->IsEnabled('f'))
+    //     printf("IndexBlock::Allocate(%x, %d)\n", freeMap, remSize);
+
+    ASSERT(remSize > 0);
+
+    numBytes = remSize;
+    numSectors = divRoundUp(remSize, SectorSize);
+    levelSectors = divRoundUp(remSize, sizePerPointer[level]);
+
+    // if (debug->IsEnabled('f')) {
+    //     printf("level: %d\n", level);
+    //     printf("sizePerPointer: %d\n", sizePerPointer[level]);
+    //     printf("levelSectors: %d\n", levelSectors);
+    // }
+
+    for (int i = 0; i < levelSectors; i++) {
+        nextSectors[i] = freeMap->FindAndSet();
+        ASSERT(freeMap->Test((int)nextSectors[i]));
+    }
+
+    if (level != 0) {
+        nextIndexBlocks = new IndexBlock *[NumSectorInt];
+        memset(nextIndexBlocks, 0, sizeof(IndexBlock *) * NumSectorInt);
+        for (int i = 0; i < levelSectors; i++) {
+            nextIndexBlocks[i] = new IndexBlock(level - 1);
+            if (!nextIndexBlocks[i]->Allocate(freeMap, ((i == levelSectors - 1 && numBytes % sizePerPointer[level]) ? remSize % sizePerPointer[level] : sizePerPointer[level])))
+                return FALSE;
+        }
+    }
+    return TRUE;
+}
+void IndexBlock::Deallocate(PersistentBitmap *freeMap) {
+    // if (debug->IsEnabled('f'))
+    //     printf("IndexBlock::Deallocate(%x)\n", freeMap);
+
+    if (level != 0) {
+        for (int i = 0; i < levelSectors; i++) {
+            nextIndexBlocks[i]->Deallocate(freeMap);
+        }
+    }
+
+    for (int i = 0; i < levelSectors; i++) {
+        ASSERT(freeMap->Test((int)nextSectors[i]));
+        freeMap->Clear((int)nextSectors[i]);
+    }
+}
+void IndexBlock::FetchFrom(int sector, int remSize) {
+    // if (debug->IsEnabled('f'))
+    //     printf("IndexBlock::FetchFrom(%d, %d)\n", sector, remSize);
+
+    numBytes = remSize;
+    numSectors = divRoundUp(remSize, SectorSize);
+    levelSectors = divRoundUp(remSize, sizePerPointer[level]);
+    kernel->synchDisk->ReadSector(sector, (char *)nextSectors);
+
+    if (level != 0) {
+        nextIndexBlocks = new IndexBlock *[NumSectorInt];
+        memset(nextIndexBlocks, 0, sizeof(IndexBlock *) * NumSectorInt);
+        for (int i = 0; i < levelSectors; i++) {
+            nextIndexBlocks[i] = new IndexBlock(level - 1);
+            nextIndexBlocks[i]->FetchFrom(nextSectors[i], (i == levelSectors - 1 && numBytes % sizePerPointer[level] ? remSize % sizePerPointer[level] : sizePerPointer[level]));
+        }
+    }
+}
+void IndexBlock::WriteBack(int sector) {
+    // if (debug->IsEnabled('f'))
+    //     printf("IndexBlock::WriteBack(%d), level:%d\n", sector, level);
+
+    kernel->synchDisk->WriteSector(sector, (char *)nextSectors);
+
+    if (level != 0) {
+        for (int i = 0; i < levelSectors; i++) {
+            if (nextIndexBlocks[i] != NULL) {
+                nextIndexBlocks[i]->WriteBack(nextSectors[i]);
+            }
+        }
+    }
+}
+int IndexBlock::ByteToSector(int offset) {
+    // if (debug->IsEnabled('f'))
+    //     printf("IndexBlock::ByteToSector(%d)\n", offset);
+
+    ASSERT(offset >= 0);
+    ASSERT(offset < levelSectors * sizePerPointer[level]);
+
+    if (level == 0) {
+        return nextSectors[offset / sizePerPointer[level]];
+    } else {
+        int levelSector = offset / sizePerPointer[level];
+        return nextIndexBlocks[levelSector]->ByteToSector(offset - levelSector * sizePerPointer[level]);
+    }
+}
+void IndexBlock::PrintSectors() {
+    for (int i = 0; i < levelSectors; i++)
+        printf("%d ", nextSectors[i]);
+
+    if (level != 0) {
+        for (int i = 0; i < levelSectors; i++) {
+            nextIndexBlocks[i]->PrintSectors();
+        }
+    }
+}
+void IndexBlock::PrintContents() {
+    int i, k, j;
+    char *data = new char[SectorSize];
+
+    for (i = k = 0; i < levelSectors; i++) {
+        kernel->synchDisk->ReadSector(nextSectors[i], data);
+        for (j = 0; (j < SectorSize) && (k < numBytes); j++, k++) {
+            if ('\040' <= data[j] && data[j] <= '\176')  // isprint(data[j])
+                printf("%c", data[j]);
+            else
+                printf("\\%x", (unsigned char)data[j]);
+        }
+        printf("\n");
+    }
+    delete[] data;
+
+    if (level != 0) {
+        for (int i = 0; i < levelSectors; i++) {
+            nextIndexBlocks[i]->PrintContents();
+        }
+    }
+}
+
 //----------------------------------------------------------------------
 // MP4 mod tag
 // FileHeader::FileHeader
@@ -37,9 +186,17 @@
 //	The purpose of this function is to keep valgrind happy.
 //----------------------------------------------------------------------
 FileHeader::FileHeader() {
+    // if (debug->IsEnabled('f'))
+    //     printf("FileHeader::FileHeader()\n");
+
     numBytes = -1;
     numSectors = -1;
     memset(dataSectors, -1, sizeof(dataSectors));
+    // MP4 start
+    level = LDirect;
+    levelSectors = -1;
+    nextIndexBlocks = NULL;
+    // MP4 end
 }
 
 //----------------------------------------------------------------------
@@ -50,7 +207,35 @@ FileHeader::FileHeader() {
 //	Always remember to deallocate their space or you will leak memory
 //----------------------------------------------------------------------
 FileHeader::~FileHeader() {
-    // nothing to do now
+    // MP4 start
+    // if (debug->IsEnabled('f'))
+    //     printf("FileHeader::~FileHeader()\n");
+
+    if (level != LDirect) {
+        ASSERT(nextIndexBlocks != NULL);
+        for (int i = 0; i < levelSectors; i++) {
+            ASSERT(nextIndexBlocks[i] != NULL);
+            delete nextIndexBlocks[i];
+        }
+        delete[] nextIndexBlocks;
+    }
+    // MP4 end
+}
+
+void FileHeader::InitLevel() {
+    // MP4 start
+    if (numBytes <= MaxDirectBytes) {
+        level = LDirect;
+    } else if (numBytes <= MaxSingleIndirectBytes) {
+        level = LSingle;
+    } else if (numBytes <= MaxDoubleIndirectBytes) {
+        level = LDouble;
+    } else if (numBytes <= MaxTripleIndirectBytes) {
+        level = LTriple;
+    } else {
+        ASSERT((FALSE));  // Not supported file size;
+    }
+    // MP4 end
 }
 
 //----------------------------------------------------------------------
@@ -65,17 +250,46 @@ FileHeader::~FileHeader() {
 //----------------------------------------------------------------------
 
 bool FileHeader::Allocate(PersistentBitmap *freeMap, int fileSize) {
+    // MP4 start
+    // if (debug->IsEnabled('f'))
+    //     printf("FileHeader::Allocate(%x, %d)\n", freeMap, fileSize);
+
     numBytes = fileSize;
     numSectors = divRoundUp(fileSize, SectorSize);
     if (freeMap->NumClear() < numSectors)
         return FALSE;  // not enough space
 
-    for (int i = 0; i < numSectors; i++) {
+    // for (int i = 0; i < numSectors; i++) {
+    //     dataSectors[i] = freeMap->FindAndSet();
+    //     // since we checked that there was enough free space,
+    //     // we expect this to succeed
+    //     ASSERT(dataSectors[i] >= 0);
+    // }
+
+    InitLevel();
+
+    levelSectors = divRoundUp(fileSize, sizePerPointer[level]);
+    // if (debug->IsEnabled('f')) {
+    //     printf("level: %d\n", level);
+    //     printf("sizePerPointer: %d\n", sizePerPointer[level]);
+    //     printf("levelSectors: %d\n", levelSectors);
+    // }
+
+    for (int i = 0; i < levelSectors; i++) {
         dataSectors[i] = freeMap->FindAndSet();
-        // since we checked that there was enough free space,
-        // we expect this to succeed
         ASSERT(dataSectors[i] >= 0);
     }
+
+    if (level != LDirect) {
+        nextIndexBlocks = new IndexBlock *[NumPointers];
+        memset(nextIndexBlocks, 0, sizeof(IndexBlock *) * NumPointers);
+        for (int i = 0; i < levelSectors; i++) {
+            nextIndexBlocks[i] = new IndexBlock(level - 1);
+            if (!nextIndexBlocks[i]->Allocate(freeMap, ((i == levelSectors - 1 && fileSize % sizePerPointer[level]) ? fileSize % sizePerPointer[level] : sizePerPointer[level])))
+                return FALSE;
+        }
+    }
+    // MP4 end
     return TRUE;
 }
 
@@ -87,10 +301,25 @@ bool FileHeader::Allocate(PersistentBitmap *freeMap, int fileSize) {
 //----------------------------------------------------------------------
 
 void FileHeader::Deallocate(PersistentBitmap *freeMap) {
-    for (int i = 0; i < numSectors; i++) {
+    // MP4 start
+    // if (debug->IsEnabled('f'))
+    //     printf("FileHeader::Deallocate(%x)\n", freeMap);
+
+    // for (int i = 0; i < numSectors; i++) {
+    //     ASSERT(freeMap->Test((int)dataSectors[i]));  // ought to be marked!
+    //     freeMap->Clear((int)dataSectors[i]);
+    // }
+
+    if (level != LDirect) {
+        for (int i = 0; i < levelSectors; i++) {
+            nextIndexBlocks[i]->Deallocate(freeMap);
+        }
+    }
+    for (int i = 0; i < levelSectors; i++) {
         ASSERT(freeMap->Test((int)dataSectors[i]));  // ought to be marked!
         freeMap->Clear((int)dataSectors[i]);
     }
+    // MP4 end
 }
 
 //----------------------------------------------------------------------
@@ -101,12 +330,38 @@ void FileHeader::Deallocate(PersistentBitmap *freeMap) {
 //----------------------------------------------------------------------
 
 void FileHeader::FetchFrom(int sector) {
-    kernel->synchDisk->ReadSector(sector, (char *)this);
+    // MP4 start
+    // if (debug->IsEnabled('f'))
+    //     printf("FileHeader::FetchFrom(%d)\n", sector);
+
+    // kernel->synchDisk->ReadSector(sector, (char *)this);
 
     /*
             MP4 Hint:
             After you add some in-core informations, you will need to rebuild the header's structure
     */
+    char buf[FileHeaderDiskSize];
+    kernel->synchDisk->ReadSector(sector, buf);
+    int offset = 0;
+    memcpy(&numBytes, buf + offset, sizeof(numBytes));
+    offset += sizeof(numBytes);
+    memcpy(&numSectors, buf + offset, sizeof(numSectors));
+    offset += sizeof(numSectors);
+    memcpy(&dataSectors, buf + offset, sizeof(dataSectors));
+    offset += sizeof(dataSectors);
+
+    InitLevel();
+
+    levelSectors = divRoundUp(numBytes, sizePerPointer[level]);
+    if (level != LDirect) {
+        nextIndexBlocks = new IndexBlock *[NumPointers];
+        memset(nextIndexBlocks, 0, sizeof(IndexBlock *) * NumPointers);
+        for (int i = 0; i < levelSectors; i++) {
+            nextIndexBlocks[i] = new IndexBlock(level - 1);
+            nextIndexBlocks[i]->FetchFrom(dataSectors[i], (i == levelSectors - 1 && numBytes % sizePerPointer[level] ? numBytes % sizePerPointer[level] : sizePerPointer[level]));
+        }
+    }
+    // MP4 end
 }
 
 //----------------------------------------------------------------------
@@ -117,7 +372,11 @@ void FileHeader::FetchFrom(int sector) {
 //----------------------------------------------------------------------
 
 void FileHeader::WriteBack(int sector) {
-    kernel->synchDisk->WriteSector(sector, (char *)this);
+    // MP4 start
+    // if (debug->IsEnabled('f'))
+    //     printf("FileHeader::WriteBack(%d)\n", sector);
+
+    // kernel->synchDisk->WriteSector(sector, (char *)this);
 
     /*
             MP4 Hint:
@@ -127,6 +386,24 @@ void FileHeader::WriteBack(int sector) {
             memcpy(buf + offset, &dataToBeWritten, sizeof(dataToBeWritten));
             ...
     */
+    char buf[FileHeaderDiskSize];
+    int offset = 0;
+    memcpy(buf + offset, &numBytes, sizeof(numBytes));
+    offset += sizeof(numBytes);
+    memcpy(buf + offset, &numSectors, sizeof(numSectors));
+    offset += sizeof(numSectors);
+    memcpy(buf + offset, &dataSectors, sizeof(dataSectors));
+    offset += sizeof(dataSectors);
+    kernel->synchDisk->WriteSector(sector, buf);
+
+    if (level != LDirect) {
+        for (int i = 0; i < levelSectors; i++) {
+            if (nextIndexBlocks[i] != NULL) {
+                nextIndexBlocks[i]->WriteBack(dataSectors[i]);
+            }
+        }
+    }
+    // MP4 end
 }
 
 //----------------------------------------------------------------------
@@ -140,7 +417,21 @@ void FileHeader::WriteBack(int sector) {
 //----------------------------------------------------------------------
 
 int FileHeader::ByteToSector(int offset) {
-    return (dataSectors[offset / SectorSize]);
+    // MP4 start
+    // if (debug->IsEnabled('f'))
+    //     printf("FileHeader::ByteToSector(%d)\n", offset);
+
+    // return (dataSectors[offset / SectorSize]);
+
+    int sec = -1;
+    if (level == LDirect) {
+        sec = dataSectors[offset / sizePerPointer[level]];
+    } else {
+        int levelSector = offset / sizePerPointer[level];
+        sec = nextIndexBlocks[levelSector]->ByteToSector(offset - levelSector * sizePerPointer[level]);
+    }
+    return sec;
+    // MP4 end
 }
 
 //----------------------------------------------------------------------
@@ -159,14 +450,23 @@ int FileHeader::FileLength() {
 //----------------------------------------------------------------------
 
 void FileHeader::Print() {
+    // MP4 start
+    // if (debug->IsEnabled('f'))
+    //     printf("FileHeader::Print()\n");
+
     int i, j, k;
     char *data = new char[SectorSize];
 
     printf("FileHeader contents.  File size: %d.  File blocks:\n", numBytes);
-    for (i = 0; i < numSectors; i++)
+    for (i = 0; i < levelSectors; i++)
         printf("%d ", dataSectors[i]);
+    if (level != LDirect) {
+        for (int i = 0; i < levelSectors; i++) {
+            nextIndexBlocks[i]->PrintSectors();
+        }
+    }
     printf("\nFile contents:\n");
-    for (i = k = 0; i < numSectors; i++) {
+    for (i = k = 0; i < levelSectors; i++) {
         kernel->synchDisk->ReadSector(dataSectors[i], data);
         for (j = 0; (j < SectorSize) && (k < numBytes); j++, k++) {
             if ('\040' <= data[j] && data[j] <= '\176')  // isprint(data[j])
@@ -177,4 +477,10 @@ void FileHeader::Print() {
         printf("\n");
     }
     delete[] data;
+    if (level != LDirect) {
+        for (int i = 0; i < levelSectors; i++) {
+            nextIndexBlocks[i]->PrintContents();
+        }
+    }
+    // MP4 end
 }

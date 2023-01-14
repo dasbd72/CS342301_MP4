@@ -244,6 +244,40 @@ OpenFile *FileSystem::Open(char *name) {
     return openFile;  // return NULL if not found
 }
 
+// MP4 Start
+OpenFileId FileSystem::OpenAFile(char *name) {
+    OpenFileId id = 0;
+    fileDescriptorTable[id] = Open(name);
+    return id;
+}
+
+int FileSystem::WriteFile(char *buffer, int size, OpenFileId id) {
+    if (id != 0)
+        return -1;
+    int retVal = fileDescriptorTable[id]->Write(buffer, size);
+    if (retVal < 0)
+        return -1;
+    return retVal;
+}
+
+int FileSystem::ReadFile(char *buffer, int size, OpenFileId id) {
+    if (id != 0)
+        return -1;
+    int retVal = fileDescriptorTable[id]->Read(buffer, size);
+    if (retVal < 0)
+        return -1;
+    return retVal;
+}
+
+int FileSystem::CloseFile(OpenFileId id) {
+    if (id != 0 || fileDescriptorTable[id] == NULL)
+        return -1;
+    delete fileDescriptorTable[id];
+    fileDescriptorTable[id] = NULL;
+    return 1;
+}
+// MP4 end
+
 //----------------------------------------------------------------------
 // FileSystem::Remove
 // 	Delete a file from the file system.  This requires:

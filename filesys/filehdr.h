@@ -17,8 +17,40 @@
 #include "disk.h"
 #include "pbitmap.h"
 
-#define NumDirect ((SectorSize - 2 * sizeof(int)) / sizeof(int))
-#define MaxFileSize (NumDirect * SectorSize)
+// MP4 start
+const int NumSectorInt = (SectorSize / sizeof(int));
+const int NumPointers = ((SectorSize - 2 * sizeof(int)) / sizeof(int));
+const int MaxDirectBytes = (NumPointers * SectorSize);
+const int MaxSingleIndirectBytes = (NumPointers * NumSectorInt * SectorSize);
+const int MaxDoubleIndirectBytes = (NumPointers * NumSectorInt * NumSectorInt * SectorSize);
+const int MaxTripleIndirectBytes = (NumPointers * NumSectorInt * NumSectorInt * NumSectorInt * SectorSize);
+const int MaxFileSize = (MaxTripleIndirectBytes);
+const int FileHeaderDiskSize = (sizeof(int) + sizeof(int) + NumPointers * SectorSize);
+const int sizePerPointer[4] = {SectorSize, NumSectorInt *SectorSize, NumSectorInt *NumSectorInt *SectorSize, NumSectorInt *NumSectorInt *NumSectorInt *SectorSize};
+// Mp4 end
+
+// MP4 Start
+class IndexBlock {
+   public:
+    IndexBlock(int level);
+    ~IndexBlock();
+    bool Allocate(PersistentBitmap *freeMap, int remSize);
+    void Deallocate(PersistentBitmap *freeMap);
+    void FetchFrom(int sector, int remSize);
+    void WriteBack(int sector);
+    int ByteToSector(int offset);
+    void PrintSectors();
+    void PrintContents();
+
+   private:
+    int level;
+    int numBytes;
+    int numSectors;
+    int levelSectors;
+    int nextSectors[NumSectorInt];
+    IndexBlock **nextIndexBlocks;
+};
+// MP4 end
 
 // The following class defines the Nachos "file header" (in UNIX terms,
 // the "i-node"), describing where on disk to find all of the data in the file.
@@ -76,10 +108,20 @@ class FileHeader {
 
     */
 
-    int numBytes;                // Number of bytes in the file
-    int numSectors;              // Number of data sectors in the file
-    int dataSectors[NumDirect];  // Disk sector numbers for each data
-                                 // block in the file
+    // MP4 start
+    int numBytes;                  // Number of bytes in the file
+    int numSectors;                // Number of data sectors in the file
+    int dataSectors[NumPointers];  // Disk sector numbers for each data
+                                   // block in the file
+    void InitLevel();
+    enum { LDirect,
+           LSingle,
+           LDouble,
+           LTriple
+    } level;
+    int levelSectors;
+    IndexBlock **nextIndexBlocks;
+    // MP4 end
 };
 
 #endif  // FILEHDR_H

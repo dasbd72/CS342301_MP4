@@ -135,6 +135,16 @@ class FileSystem {
 
     OpenFile *Open(char *name);  // Open a file (UNIX open)
 
+    // MP4 Start
+    OpenFileId OpenAFile(char *name);
+
+    int WriteFile(char *buffer, int size, OpenFileId id);
+
+    int ReadFile(char *buffer, int size, OpenFileId id);
+
+    int CloseFile(OpenFileId id);
+    // MP4 End
+
     bool Remove(char *name);  // Delete a file (UNIX unlink)
 
     void List();  // List all the files in the file system
@@ -146,6 +156,7 @@ class FileSystem {
                               // represented as a file
     OpenFile *directoryFile;  // "Root" directory -- list of
                               // file names, represented as a file
+    OpenFile *fileDescriptorTable[1];
 };
 
 #endif  // FILESYS
