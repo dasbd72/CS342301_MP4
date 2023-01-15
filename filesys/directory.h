@@ -18,6 +18,7 @@
 #define DIRECTORY_H
 
 #include "openfile.h"
+#include "pbitmap.h"
 
 #define FileNameMaxLen 9  // for simplicity, we assume \
                          // file names are <= 9 characters long
@@ -29,6 +30,7 @@
 // Internal data structures kept public so that Directory operations can
 // access them directly.
 
+// MP4 start
 class DirectoryEntry {
    public:
     bool inUse;                     // Is this directory entry in use?
@@ -36,7 +38,9 @@ class DirectoryEntry {
                                     //   FileHeader for this file
     char name[FileNameMaxLen + 1];  // Text name for file, with +1 for
                                     // the trailing '\0'
+    bool isDir;
 };
+// MP4 end
 
 // The following class defines a UNIX-like "directory".  Each entry in
 // the directory describes a file, and where to find it on disk.
@@ -70,6 +74,14 @@ class Directory {
     void Print();  // Verbose print of the contents
                    //  of the directory -- all the file
                    //  names and their contents.
+
+    bool IsDir(char *name);
+
+    bool AddDirectory(char *name, int newSector);
+
+    void RecursiveRemove(PersistentBitmap *freeMap);
+
+    void RecursiveList(int indents);
 
    private:
     /*

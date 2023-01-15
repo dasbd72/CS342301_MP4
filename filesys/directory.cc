@@ -109,6 +109,14 @@ int Directory::Find(char *name) {
     return -1;
 }
 
+bool Directory::IsDir(char *name) {
+    int i = FindIndex(name);
+
+    if (i != -1)
+        return table[i].isDir;
+    return FALSE;
+}
+
 //----------------------------------------------------------------------
 // Directory::Add
 // 	Add a file into the directory.  Return TRUE if successful;
@@ -127,12 +135,30 @@ bool Directory::Add(char *name, int newSector) {
     for (int i = 0; i < tableSize; i++)
         if (!table[i].inUse) {
             table[i].inUse = TRUE;
+            table[i].isDir = FALSE;
             strncpy(table[i].name, name, FileNameMaxLen);
             table[i].sector = newSector;
             return TRUE;
         }
     return FALSE;  // no space.  Fix when we have extensible files.
 }
+
+// MP4 start
+bool Directory::AddDirectory(char *name, int newSector) {
+    if (FindIndex(name) != -1)
+        return FALSE;
+
+    for (int i = 0; i < tableSize; i++)
+        if (!table[i].inUse) {
+            table[i].inUse = TRUE;
+            table[i].isDir = TRUE;
+            strncpy(table[i].name, name, FileNameMaxLen);
+            table[i].sector = newSector;
+            return TRUE;
+        }
+    return FALSE;
+}
+// MP4 end
 
 //----------------------------------------------------------------------
 // Directory::Remove
@@ -151,15 +177,65 @@ bool Directory::Remove(char *name) {
     return TRUE;
 }
 
+void Directory::RecursiveRemove(PersistentBitmap *freeMap) {
+    Directory *directory = new Directory(tableSize);
+    OpenFile *dirFile;
+    FileHeader *fileHdr = new FileHeader;
+    bool success = FALSE;
+
+    for (int i = 0; i < tableSize; i++) {
+        if (table[i].inUse) {
+            if (table[i].isDir) {
+                dirFile = new OpenFile(table[i].sector);
+                directory->FetchFrom(dirFile);
+                directory->RecursiveRemove(freeMap);
+
+                fileHdr->FetchFrom(table[i].sector);
+                fileHdr->Deallocate(freeMap);
+                freeMap->Clear(table[i].sector);
+                fileHdr->WriteBack(table[i].sector);
+                freeMap->WriteBack(dirFile);
+                delete dirFile;
+            }
+            table[i].inUse = FALSE;
+        }
+    }
+    delete fileHdr;
+    delete directory;
+}
+
 //----------------------------------------------------------------------
 // Directory::List
 // 	List all the file names in the directory.
 //----------------------------------------------------------------------
 
 void Directory::List() {
-    for (int i = 0; i < tableSize; i++)
+    for (int i = 0; i < tableSize; i++) {
         if (table[i].inUse)
             printf("%s\n", table[i].name);
+    }
+}
+
+void Directory::RecursiveList(int indents) {
+    Directory *directory = new Directory(tableSize);
+    OpenFile *dirFile;
+
+    for (int i = 0; i < tableSize; i++) {
+        if (table[i].inUse) {
+            for (int j = 0; j < indents; j++) {
+                printf("  ");
+            }
+            printf("[%c] %s\n", table[i].isDir ? 'D' : 'F', table[i].name);
+
+            if (table[i].isDir) {
+                dirFile = new OpenFile(table[i].sector);
+                directory->FetchFrom(dirFile);
+                directory->RecursiveList(indents + 1);
+                delete dirFile;
+            }
+        }
+    }
+    delete directory;
 }
 
 //----------------------------------------------------------------------
@@ -170,6 +246,8 @@ void Directory::List() {
 
 void Directory::Print() {
     FileHeader *hdr = new FileHeader;
+    Directory *directory = new Directory(tableSize);
+    OpenFile *dirFile;
 
     printf("Directory contents:\n");
     for (int i = 0; i < tableSize; i++)
@@ -177,7 +255,15 @@ void Directory::Print() {
             printf("Name: %s, Sector: %d\n", table[i].name, table[i].sector);
             hdr->FetchFrom(table[i].sector);
             hdr->Print();
+
+            if (table[i].isDir) {
+                dirFile = new OpenFile(table[i].sector);
+                directory->FetchFrom(dirFile);
+                directory->Print();
+                delete dirFile;
+            }
         }
     printf("\n");
+    delete directory;
     delete hdr;
 }

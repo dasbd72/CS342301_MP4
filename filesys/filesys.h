@@ -147,9 +147,17 @@ class FileSystem {
 
     bool Remove(char *name);  // Delete a file (UNIX unlink)
 
-    void List();  // List all the files in the file system
+    void List(char *name);
 
     void Print();  // List all the files and their contents
+
+    bool CreateDirectory(char *name);
+
+    bool RecursiveRemove(char *name);
+
+    void RecursiveList(char *name);
+
+    //void showHeaderSize();
 
    private:
     OpenFile *freeMapFile;    // Bit map of free disk blocks,

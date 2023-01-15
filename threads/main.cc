@@ -147,6 +147,7 @@ void Print(char *name) {
 //----------------------------------------------------------------------
 static void CreateDirectory(char *name) {
     // MP4 Assignment
+    kernel->fileSystem->CreateDirectory(name);
 }
 
 //----------------------------------------------------------------------
@@ -183,6 +184,7 @@ int main(int argc, char **argv) {
     bool mkdirFlag = false;
     bool recursiveListFlag = false;
     bool recursiveRemoveFlag = false;
+    bool showheadersize = false;
 #endif  // FILESYS_STUB
 
     // some command line arguments are handled here.
@@ -248,6 +250,8 @@ int main(int argc, char **argv) {
             i++;
         } else if (strcmp(argv[i], "-D") == 0) {
             dumpFlag = true;
+        } else if (strcmp(argv[i], "-bonus2") == 0) {
+            showheadersize = true;
         }
 #endif  // FILESYS_STUB
         else if (strcmp(argv[i], "-u") == 0) {
@@ -285,7 +289,10 @@ int main(int argc, char **argv) {
 
 #ifndef FILESYS_STUB
     if (removeFileName != NULL) {
-        kernel->fileSystem->Remove(removeFileName);
+        if (recursiveRemoveFlag)
+            kernel->fileSystem->RecursiveRemove(removeFileName);
+        else
+            kernel->fileSystem->Remove(removeFileName);
     }
     if (copyUnixFileName != NULL && copyNachosFileName != NULL) {
         Copy(copyUnixFileName, copyNachosFileName);
@@ -294,7 +301,10 @@ int main(int argc, char **argv) {
         kernel->fileSystem->Print();
     }
     if (dirListFlag) {
-        kernel->fileSystem->List();
+        if (recursiveListFlag)
+            kernel->fileSystem->RecursiveList(listDirectoryName);
+        else
+            kernel->fileSystem->List(listDirectoryName);
     }
     if (mkdirFlag) {
         // MP4 mod tag
@@ -302,6 +312,8 @@ int main(int argc, char **argv) {
     }
     if (printFileName != NULL) {
         Print(printFileName);
+    }
+    if (showheadersize) {
     }
 #endif  // FILESYS_STUB
 
