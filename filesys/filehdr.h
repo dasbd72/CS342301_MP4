@@ -41,6 +41,7 @@ class IndexBlock {
     int ByteToSector(int offset);
     void PrintSectors();
     void PrintContents();
+    int GetIndexBlockSize();
 
    private:
     int level;
@@ -91,6 +92,8 @@ class FileHeader {
                        // in bytes
 
     void Print();  // Print the contents of the file.
+
+    int GetHeaderSize();
 
    private:
     /*

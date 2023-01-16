@@ -585,4 +585,34 @@ void FileSystem::Print() {
     delete directory;
 }
 
+// int FileSystem::GetHeaderSize() {
+//     Directory *directory = new Directory(NumDirEntries);
+//     directory->FetchFrom(directoryFile);
+//     directory->();
+
+//     delete directory;
+// }
+
+void FileSystem::PrintFileHdrSize(char *name) {
+    char *duplicate = new char[256];
+    strcpy(duplicate, name);
+
+    Directory *directory;
+    OpenFile *dirFile;
+    FileHeader *hdr = new FileHeader;
+    char *token;
+    int sector;
+
+    Parser(directoryFile, directory, dirFile, token, sector, duplicate);
+
+    hdr->FetchFrom(sector);
+    printf("Header Size: %d\n", hdr->GetHeaderSize());
+
+    if (dirFile != directoryFile)
+        delete dirFile;
+    delete hdr;
+    delete directory;
+    delete duplicate;
+}
+
 #endif  // FILESYS_STUB

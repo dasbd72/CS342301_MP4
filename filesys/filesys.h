@@ -151,13 +151,13 @@ class FileSystem {
 
     void Print();  // List all the files and their contents
 
+    void PrintFileHdrSize(char *name);
+
     bool CreateDirectory(char *name);
 
     bool RecursiveRemove(char *name);
 
     void RecursiveList(char *name);
-
-    //void showHeaderSize();
 
    private:
     OpenFile *freeMapFile;    // Bit map of free disk blocks,

@@ -184,7 +184,8 @@ int main(int argc, char **argv) {
     bool mkdirFlag = false;
     bool recursiveListFlag = false;
     bool recursiveRemoveFlag = false;
-    bool showheadersize = false;
+    bool showHeaderSize = false;
+    char *showHeaderFileName = NULL;
 #endif  // FILESYS_STUB
 
     // some command line arguments are handled here.
@@ -251,7 +252,9 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "-D") == 0) {
             dumpFlag = true;
         } else if (strcmp(argv[i], "-bonus2") == 0) {
-            showheadersize = true;
+            ASSERT(i + 1 < argc);
+            showHeaderSize = true;
+            showHeaderFileName = argv[i + 1];
         }
 #endif  // FILESYS_STUB
         else if (strcmp(argv[i], "-u") == 0) {
@@ -313,7 +316,8 @@ int main(int argc, char **argv) {
     if (printFileName != NULL) {
         Print(printFileName);
     }
-    if (showheadersize) {
+    if (showHeaderSize) {
+        kernel->fileSystem->PrintFileHdrSize(showHeaderFileName);
     }
 #endif  // FILESYS_STUB
 

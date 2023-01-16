@@ -177,6 +177,15 @@ void IndexBlock::PrintContents() {
         }
     }
 }
+int IndexBlock::GetIndexBlockSize() {
+    int ret = SectorSize;
+    if (level != 0) {
+        for (int i = 0; i < levelSectors; i++) {
+            ret += nextIndexBlocks[i]->GetIndexBlockSize();
+        }
+    }
+    return ret;
+}
 
 //----------------------------------------------------------------------
 // MP4 mod tag
@@ -483,4 +492,14 @@ void FileHeader::Print() {
         }
     }
     // MP4 end
+}
+
+int FileHeader::GetHeaderSize() {
+    int ret = SectorSize;
+    if (level != LDirect) {
+        for (int i = 0; i < levelSectors; i++) {
+            ret += nextIndexBlocks[i]->GetIndexBlockSize();
+        }
+    }
+    return ret;
 }
